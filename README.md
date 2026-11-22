@@ -63,6 +63,21 @@ Run `python setup/build.py` to create the Windows download under `dist`. The bui
 
 The reusable `csillagszem.model.track` interface takes fresh, per-camera feature frames, saved calibrations, live screen geometry and a monotonic time. It returns an `Estimate` with physical desktop coordinates, screen identity, contributing cameras and timestamp, or `None` when unavailable. The `error` field is a weighting scale derived from calibration residuals. Future dwell or accessibility controls can consume this interface. No clinical or accessibility performance claim is made for this release.
 
+### Deterministic recovery replay
+
+Run `python -m unittest discover -s tests -v` to exercise timestamped feature packets through the real camera supervisor and `App.tick` live entry point. The replay replaces the clock, device discovery, process transport and UI surfaces; it uses the actual calibration projection, fusion, smoothing, watchdog and calibration-session logic. Separate Windows tests exercise real Tk windows, and Windows CI installs the built package and runs native vision inference on a reference portrait.
+
+| Replay event | Checked result |
+| --- | --- |
+| Last view stops delivering | Gaze and overlay unavailable after 336 ms at the normal 28 ms tick interval (320 ms freshness limit). |
+| Two comparable views disagree, then one freezes | Unavailable during conflict; the advancing survivor resumes after 112 ms at 28 ms intervals (90 ms fusion skew limit). |
+| Capture worker blocks | Retirement after 4 seconds without capture progress, forced termination after a further 1.2 seconds, retry after 4 seconds from retirement; the scripted replay receives its recovered frame at 8.05 seconds. |
+| Camera disconnects and returns at index 7 instead of 0 | The surviving view continues on the disconnect tick, the old child is retired, and the same saved calibration resumes with the new capture index. |
+| Old, duplicate, future or nonfinite capture timestamps | Packets cannot replace fresh observations, add fixation history or postpone watchdog recovery. Fresh no-eyes captures keep a healthy worker alive and clear its old observations. |
+| Either monitor disappears during calibration or validation | Waiting and active sessions cancel before scoring or saving on the next display poll, within 1.028 seconds in the replay; saved profiles remain unchanged. |
+
+These timings use a virtual clock and scheduled packets. Physical disconnect recovery and gaze accuracy still require the attended hardware benchmark described in AGENTS.md.
+
 Profiles and the latest accuracy report live under `%LOCALAPPDATA%\Csillagszemű Juhász`. Preview frames stay in memory. Export saves anonymized hardware keys, device labels, target locations and error statistics. Model weights are downloaded from their publishers during setup. See **THIRD-PARTY.md** for provenance.
 
 To uninstall, close Csillagszemű Juhász, remove its Start menu shortcut, and delete `%LOCALAPPDATA%\Programs\Csillagszemu-Juhasz`. The separate `%LOCALAPPDATA%\Csillagszemű Juhász` directory contains personal calibrations and can be kept for a future installation.
