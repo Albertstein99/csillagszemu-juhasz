@@ -5,7 +5,7 @@ import time
 import cv2
 import numpy as np
 
-ROOT=pathlib.Path(__file__).resolve().parents[1]
+ROOT=pathlib.Path(sys.argv[2]) if len(sys.argv)>2 else pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from csillagszem.vision import Vision
 

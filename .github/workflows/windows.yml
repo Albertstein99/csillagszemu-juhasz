@@ -15,18 +15,26 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - run: "python -m pip install --only-binary=:all: -r requirements.txt"
-      - run: python -m pip check
-      - run: python -m unittest discover -s tests -v
-      - run: python setup/assets.py
-      - run: python run.py --verify
-      - name: Exercise inference with a real image
+      - run: python setup/build.py
+      - name: Install and verify the distributed Windows package
+        shell: pwsh
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP 'csillagszem-install'
+          $proc = Start-Process -FilePath (Resolve-Path 'dist/Csillagszemu-Juhasz-Setup.exe') -ArgumentList @('--test-install', $stage) -Wait -PassThru -WindowStyle Hidden
+          Get-Content (Join-Path $stage 'installer.log')
+          if ($proc.ExitCode -ne 0) { throw "Installer exited with $($proc.ExitCode)" }
+          $installed = Get-Content (Join-Path $stage 'installed.txt') -Raw
+          "APP_PYTHON=$installed\python\python.exe" >> $env:GITHUB_ENV
+      - name: Run desktop and calibration checks
+        shell: pwsh
+        run: '& $env:APP_PYTHON -m unittest discover -s tests -v'
+      - name: Exercise the installed vision models with a real image
         shell: pwsh
         run: |
           $portrait = Join-Path $env:RUNNER_TEMP 'csillagszem-test-portrait.jpg'
           Invoke-WebRequest 'https://storage.googleapis.com/mediapipe-assets/portrait.jpg' -OutFile $portrait
-          python tests/real_image.py $portrait
-      - run: python setup/build.py
+          $installed = Split-Path (Split-Path $env:APP_PYTHON)
+          & $env:APP_PYTHON tests/real_image.py $portrait $installed
       - uses: actions/upload-artifact@v4
         with:
           name: Csillagszemu-Juhasz-Windows
@@ -38,13 +46,15 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: Csillagszemu-Juhasz-Windows
-      - name: Publish first Windows preview
+      - name: Publish the versioned Windows preview
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! gh release view v0.1.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create v0.1.0 Csillagszemu-Juhasz-Windows.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Csillagszemű Juhász 0.1.0" --notes "Windows x64 preview. Extract the ZIP and open the setup program. Internet is required for installation. Measure your own setup with Check accuracy."
+          version=$(python -c 'from csillagszem import __version__; print(__version__)')
+          if ! gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "v$version" Csillagszemu-Juhasz-Windows.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Csillagszemű Juhász $version" --notes "Windows x64 preview. Extract the ZIP and open the setup program. Internet is required for installation. Measure your own setup with Check accuracy."
           fi

@@ -4,7 +4,7 @@ Csillagszemű Juhász estimates where one person is looking on an extended Windo
 
 ## Install on Windows
 
-**[Download the Windows package](downloads/Csillagszemu-Juhasz-Windows.zip?raw=1)** · [GitHub releases](../../releases)
+**[Download the Windows package](https://github.com/Albertstein99/csillagszemu-juhasz/raw/refs/heads/main/downloads/Csillagszemu-Juhasz-Windows.zip)** · [GitHub releases](https://github.com/Albertstein99/csillagszemu-juhasz/releases)
 
 1. Extract **Csillagszemu-Juhasz-Windows.zip**. Open **Csillagszemu-Juhasz-Setup.exe** and choose **Install**. Use Windows 10 version 1803 or later, or Windows 11, on x64 hardware. Setup downloads its private Python environment, libraries and models. Allow about 1.5 GB of free space. Tracking works offline afterward.
 2. Open **Csillagszemű Juhász** from Start. In Windows camera privacy settings, allow desktop apps to use cameras. Close another app if it has exclusive use of a camera.

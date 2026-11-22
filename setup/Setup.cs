@@ -19,6 +19,8 @@ internal sealed class Setup : Form
     readonly Button action = new Button();
     readonly string appRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Programs","Csillagszemu-Juhasz");
     bool busy;
+    bool checking;
+    string checkLog;
     string installed;
     Setup()
     {
@@ -49,12 +51,16 @@ internal sealed class Setup : Form
     }
     void Note(string text)
     {
+        if(checking) {
+            lock(log) File.AppendAllText(checkLog,text+Environment.NewLine);
+            return;
+        }
         if (InvokeRequired) { BeginInvoke((Action<string>)Note,text); return; }
         log.AppendText(text+Environment.NewLine);
     }
     void Step(string text)
     {
-        Invoke((Action)(()=>stage.Text=text));
+        if(!checking) Invoke((Action)(()=>stage.Text=text));
         Note(text);
     }
     static string Quote(string value) { return "\""+value+"\""; }
@@ -99,14 +105,18 @@ internal sealed class Setup : Form
     }
     string Install()
     {
+        return InstallInto(appRoot);
+    }
+    string InstallInto(string targetRoot)
+    {
         if(!Environment.Is64BitOperatingSystem) throw new PlatformNotSupportedException("Windows x64 is required.");
-        Directory.CreateDirectory(appRoot);
+        Directory.CreateDirectory(targetRoot);
         string fingerprint;
         using(var stream=Payload()) fingerprint=Digest(stream).Substring(0,16);
-        var destination=Path.Combine(appRoot,"build-"+fingerprint);
-        using(var lockFile=new FileStream(Path.Combine(appRoot,"setup.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None)) {
-            if(File.Exists(Path.Combine(destination,"ready"))) { Shortcut(destination); return destination; }
-            var job=Path.Combine(appRoot,"setup-"+Guid.NewGuid().ToString("N"));
+        var destination=Path.Combine(targetRoot,"build-"+fingerprint);
+        using(var lockFile=new FileStream(Path.Combine(targetRoot,"setup.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None)) {
+            if(File.Exists(Path.Combine(destination,"ready"))) { if(!checking) Shortcut(destination); return destination; }
+            var job=Path.Combine(targetRoot,"setup-"+Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(job);
             try {
                 Step("Downloading the Windows runtime");
@@ -132,11 +142,11 @@ internal sealed class Setup : Form
                 Run(python,"-E -s "+Quote(Path.Combine(job,"run.py"))+" --verify",job);
                 File.WriteAllText(Path.Combine(job,"ready"),fingerprint);
                 Directory.Move(job,destination);
-                Shortcut(destination);
+                if(!checking) Shortcut(destination);
                 return destination;
             } finally {
                 // Only our newly allocated, GUID-named staging directory is eligible.
-                if(Directory.Exists(job) && Path.GetDirectoryName(Path.GetFullPath(job))==Path.GetFullPath(appRoot))
+                if(Directory.Exists(job) && Path.GetDirectoryName(Path.GetFullPath(job))==Path.GetFullPath(targetRoot))
                     try {Directory.Delete(job,true);} catch(IOException) {} catch(UnauthorizedAccessException) {}
             }
         }
@@ -152,6 +162,19 @@ internal sealed class Setup : Form
         if(args.Length==2 && args[0]=="--extract") {Unpack(Path.GetFullPath(args[1])); return 0;}
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        if(args.Length==2 && args[0]=="--test-install") {
+            string folder=Path.GetFullPath(args[1]);
+            Directory.CreateDirectory(folder);
+            using(var setup=new Setup()) {
+                setup.checking=true;
+                setup.checkLog=Path.Combine(folder,"installer.log");
+                try {
+                    string destination=setup.InstallInto(folder);
+                    File.WriteAllText(Path.Combine(folder,"installed.txt"),destination);
+                    return 0;
+                } catch(Exception e) { setup.Note(e.ToString()); return 1; }
+            }
+        }
         Application.Run(new Setup());
         return 0;
     }
