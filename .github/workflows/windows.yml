@@ -1,0 +1,50 @@
+name: Windows build and vision tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install --only-binary=:all: -r requirements.txt
+      - run: python -m pip check
+      - run: python -m unittest discover -s tests -v
+      - run: python setup/assets.py
+      - run: python run.py --verify
+      - name: Exercise inference with a real image
+        shell: pwsh
+        run: |
+          $portrait = Join-Path $env:RUNNER_TEMP 'csillagszem-test-portrait.jpg'
+          Invoke-WebRequest 'https://storage.googleapis.com/mediapipe-assets/portrait.jpg' -OutFile $portrait
+          python tests/real_image.py $portrait
+      - run: python setup/build.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Csillagszemu-Juhasz-Windows
+          path: dist/Csillagszemu-Juhasz-Windows.zip
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Csillagszemu-Juhasz-Windows
+      - name: Publish first Windows preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view v0.1.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create v0.1.0 Csillagszemu-Juhasz-Windows.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Csillagszemű Juhász 0.1.0" --notes "Windows x64 preview. Extract the ZIP and open the setup program. Internet is required for installation. Measure your own setup with Check accuracy."
+          fi
