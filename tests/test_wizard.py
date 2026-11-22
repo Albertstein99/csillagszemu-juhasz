@@ -11,12 +11,50 @@ from unittest.mock import patch
 from csillagszem.app import App
 from csillagszem.desktop import Screen
 from csillagszem.model import Frame
-from csillagszem.storage import load_profile
+from csillagszem.storage import load_profile, save_json
 from test_tracking import features
 
 
 @unittest.skipUnless(os.name=='nt','Windows desktop integration')
 class DesktopFlow(unittest.TestCase):
+    def test_display_removal_closes_calibration_window_and_preserves_profile(self):
+        for waiting in (True,False):
+            with self.subTest(waiting=waiting), tempfile.TemporaryDirectory() as home:
+                root=tk.Tk()
+                root.withdraw()
+                app=App(root,Path(home),home)
+                try:
+                    a=Screen('a','Left',-1280,-160,1280,720)
+                    b=Screen('b','Right',0,0,1920,1080)
+                    app.displays={s.id:s for s in (a,b)}
+                    app.cameras.running=True
+                    app.cameras.frames={'front':Frame('front',100.,[0]*12,.9)}
+                    save_json(app.profile_path,app.profile)
+                    saved=app.profile_path.read_bytes()
+                    targets=[('Natural seating position',b,(.5,.5))]
+                    with patch('csillagszem.wizard.place',lambda window,*args:window.withdraw()), \
+                         patch('csillagszem.wizard.target_list',return_value=targets), \
+                         patch('time.monotonic',return_value=100.):
+                        app.begin(False)
+                        wizard=app.wizard
+                        if not waiting:
+                            wizard.resume()
+                        self.assertEqual(wizard.waiting,waiting)
+                    app.last_display=100.
+                    with patch('time.monotonic',return_value=101.01), \
+                         patch('csillagszem.app.desktop.screens',return_value=[a]), \
+                         patch.object(app.cameras,'maintenance'), \
+                         patch.object(app,'finish_session') as finish:
+                        app.tick()
+                    self.assertIsNone(app.wizard)
+                    self.assertFalse(wizard.win.winfo_exists())
+                    self.assertIn('Display layout changed',app.notice.get())
+                    self.assertEqual(app.displays,{'a':a})
+                    self.assertEqual(app.profile_path.read_bytes(),saved)
+                    finish.assert_not_called()
+                finally:
+                    app.close()
+
     def test_full_calibration_validation_reload_and_abort(self):
         with tempfile.TemporaryDirectory() as home:
             root=tk.Tk()

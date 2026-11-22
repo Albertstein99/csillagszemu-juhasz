@@ -2,6 +2,7 @@
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
 import hashlib
+import math
 import multiprocessing as mp
 import queue
 import threading
@@ -175,6 +176,12 @@ class Cameras:
                 self.history.pop(mode,None)
 
     def maintenance(self, now):
+        # Expiry must happen even when a worker is silent. In particular, stale
+        # observations must not make App.begin think calibration can start.
+        for mode,frame in list(self.frames.items()):
+            if not 0 <= now-frame.t <= .32:
+                self.frames.pop(mode,None)
+                self.history[mode].clear()
         for entry in self.retiring[:]:
             since,proc,out,key = entry
             if proc.is_alive() and now-since>1.2:
@@ -208,10 +215,10 @@ class Cameras:
                 preview=self.ctx.Event()
                 proc = self.ctx.Process(target=capture_worker,args=(device,self.directory,output,stop,preview,self.size),daemon=True)
                 proc.start()
-                self.workers[key] = [proc,output,stop,now,False,preview]
+                self.workers[key] = [proc,output,stop,now,False,preview,-math.inf]
                 self.status[key] = 'Starting camera'
             worker = self.workers[key]
-            proc,output,stop,heartbeat,started,preview = worker
+            proc,output,stop,heartbeat,started,preview,last_capture = worker
             if key==self.preview_key:
                 preview.set()
             else:
@@ -221,19 +228,26 @@ class Cameras:
                     status,t,mode,x,q,thumbnail = output.get_nowait()
                 except (queue.Empty,EOFError,OSError):
                     break
-                worker[3] = now
+                if not mode:
+                    self.status[key] = status
+                    continue
+                # Receipt is not capture progress: delayed, duplicate or invalid
+                # packets must neither replace a newer observation nor keep a
+                # stalled capture/inference pipeline alive. No-eyes captures do
+                # count as progress, and clear the previous fixation normally.
+                if not math.isfinite(t) or not 0 <= now-t <= .32 or t <= worker[6]:
+                    continue
+                worker[3],worker[4],worker[6] = t,True,t
                 if thumbnail and key==self.preview_key:
                     self.thumbnail=(key,t,thumbnail)
                 self.status[key] = status
-                if mode:
-                    worker[4] = True
-                    if x is None or now-t > .32:
-                        self.frames.pop(mode,None)
-                        self.history[mode].clear()
-                    else:
-                        f = Frame(mode,t,x,q)
-                        self.frames[mode] = f
-                        self.history[mode].append(f)
+                if x is None:
+                    self.frames.pop(mode,None)
+                    self.history[mode].clear()
+                else:
+                    f = Frame(mode,t,x,q)
+                    self.frames[mode] = f
+                    self.history[mode].append(f)
             if not proc.is_alive() or now-worker[3] > (4. if worker[4] else 45.):
                 if proc.is_alive():
                     self.status[key] = 'Camera stalled; reconnecting'

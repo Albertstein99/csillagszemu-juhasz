@@ -12,7 +12,8 @@ Read README.md for installation, calibration, report definitions and release com
 
 ## Next development milestone
 
-1. Build a deterministic timestamped replay test that goes through the camera supervisor and the live tracking entry point. Cover a stalled worker, an unplugged camera returning at a different index, stale packets, two views temporarily disagreeing, and display removal during calibration. Check time to unavailable and recovery of the surviving view.
+Milestone 1 is covered by `tests/replay.py`, `tests/test_camera_replay.py`, `tests/test_calibration_replay.py` and the Windows desktop tests. Timestamped packets pass through the real camera supervisor and `App.tick`. At 28 ms ticks, loss becomes unavailable after 336 ms and an advancing surviving view recovers from a frozen conflicting view after 112 ms. The replay also checks worker retirement/restart, persistent identity across capture-index changes, stale-packet rejection and calibration cancellation on display removal. Run `python -m unittest discover -s tests -v`; use Windows CI for the native and installer checks. README.md describes the replay boundaries and timing results.
+
 2. Compare the combined estimate against each camera on matched validation samples. Extend the accuracy report with paired sample counts and per-target differences so differences in coverage can be identified. Preserve compatibility with reports and profiles from v0.1.1. Add regression tests and document the new fields.
 3. Arrange an attended hardware benchmark. Test one and two independent webcams, each monitor, neutral and shifted seating, and a restart with unchanged geometry. Record median and P90 pixel error, coverage, correct-monitor fraction, jitter and measured recovery time. Keep calibration targets separate from evaluation targets. Obtain permission before collecting or publishing participant data.
 
